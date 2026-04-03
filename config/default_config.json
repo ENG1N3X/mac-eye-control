@@ -1,10 +1,25 @@
 {
   "camera_index": 0,
+  "blink_threshold": 0.51,
+  "blink_consec_frames": 2,
   "blink_double_interval_sec": 0.5,
   "scroll_threshold_pitch_up": 15,
   "scroll_threshold_pitch_down": -15,
   "scroll_speed": 5,
   "smoothing_window": 10,
   "calibration_dwell_sec": 1.0,
-  "calibration_points": 9
+  "calibration_points": 9,
+  "min_detection_confidence": 0.8,
+  "min_tracking_confidence": 0.8,
+  "user_face_width_mm": 140,
+  "print_data": true,
+  "show_all_features": true,
+  "log_data": true,
+  "log_all_features": false,
+  "show_on_screen_data": true,
+  "enable_head_pose": true,
+  "log_folder": "logs",
+  "server_ip": "127.0.0.1",
+  "server_port": 7070,
+  "head_pose_display_threshold": 10
 }
