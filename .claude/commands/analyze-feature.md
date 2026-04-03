@@ -29,17 +29,17 @@ Summary:
 - Risks identified: <N>
 - Status: Ready for Development | Blocked
 
-Proceed with /new-feature using this analysis? (yes / no)
+Proceed with /implement-phase using this analysis? (yes / no)
 ```
 
-If the status is **Blocked**, explain what open questions must be resolved before development can start. Do not offer to launch `/new-feature`.
+If the status is **Blocked**, explain what open questions must be resolved before development can start. Do not offer to launch `/implement-phase`.
 
 ---
 
 **Step 3 — Launch development (only if user confirms)**
 
-If the user says yes, launch `/new-feature` with the following context:
+If the user says yes, invoke the `implement-phase` skill with the following argument:
 
-> Implement the feature described in `docs/features/<feature-slug>.md`. Read that file fully before planning. All acceptance criteria in the document must be met.
+> Feature from docs/features/<feature-slug>.md — read that file fully as the plan. All acceptance criteria in the document must be met.
 
-This will trigger the full planner → developer → tester pipeline.
+This skips re-planning (the analyst document IS the plan) and goes directly to developer → tester pipeline.
