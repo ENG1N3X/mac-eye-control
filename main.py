@@ -212,6 +212,26 @@ def main():
                         cv.putText(frame, f"Yaw: {int(yaw)}", (30, 140), cv.FONT_HERSHEY_DUPLEX, 0.8, (0, 255, 0), 2, cv.LINE_AA)
                         cv.putText(frame, f"Roll: {int(roll)}", (30, 170), cv.FONT_HERSHEY_DUPLEX, 0.8, (0, 255, 0), 2, cv.LINE_AA)
 
+                    # Controls hint — bottom right corner
+                    cursor_state = "ON" if cursor_controller.is_enabled() else "OFF"
+                    controls = [
+                        f"[P] Cursor: {cursor_state}",
+                        "[R] Recalibrate",
+                        "[C] Reset head pose",
+                        "[S] Recording",
+                        "[Q] Quit",
+                    ]
+                    font = cv.FONT_HERSHEY_SIMPLEX
+                    font_scale = 0.5
+                    thickness = 1
+                    line_h = 20
+                    margin = 10
+                    for i, text in enumerate(reversed(controls)):
+                        y = img_h - margin - i * line_h
+                        # dark shadow for readability
+                        cv.putText(frame, text, (img_w - 210, y + 1), font, font_scale, (0, 0, 0), thickness + 1, cv.LINE_AA)
+                        cv.putText(frame, text, (img_w - 210, y), font, font_scale, (200, 200, 200), thickness, cv.LINE_AA)
+
             cv.imshow("Eye Tracking", frame)
             key = cv.waitKey(1) & 0xFF
 
