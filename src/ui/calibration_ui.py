@@ -49,7 +49,38 @@ class CalibrationUI:
         )
         self._root.update()
 
+    def update_hint(self, text: str, color: str = 'gray') -> None:
+        self._canvas.delete('hint')
+        dot = self._canvas.coords('dot')
+        if dot:
+            cx = (dot[0] + dot[2]) / 2
+            cy = (dot[1] + dot[3]) / 2
+            self._canvas.create_text(
+                cx, cy - 40,
+                text=text,
+                fill=color, font=('Arial', 14), tags='hint',
+            )
+
+    def update_stability(self, fraction: float) -> None:
+        self._canvas.delete('stability_arc')
+        dot = self._canvas.coords('dot')
+        if dot:
+            cx = (dot[0] + dot[2]) / 2
+            cy = (dot[1] + dot[3]) / 2
+            r = 38
+            self._canvas.create_arc(
+                cx - r, cy - r, cx + r, cy + r,
+                start=90,
+                extent=fraction * 360,
+                style=tk.ARC,
+                outline='orange',
+                width=3,
+                tags='stability_arc',
+            )
+        self._root.update()
+
     def update_countdown(self, fraction: float) -> None:
+        self._canvas.delete('stability_arc')
         self._canvas.delete('countdown_arc')
         dot = self._canvas.coords('dot')
         if dot:

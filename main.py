@@ -88,7 +88,13 @@ def main():
     gaze_mapper = GazeMapper()
     calib_path = config["calibration_path"]
 
-    if not gaze_mapper.load(calib_path):
+    try:
+        loaded = gaze_mapper.load(calib_path)
+    except Exception as e:
+        print(f"Calibration file error ({e}), running new calibration...")
+        loaded = False
+
+    if not loaded:
         print("No calibration found. Running calibration...")
         samples = calibration_session.run(cap, tracker, head_pose)
         gaze_mapper.fit(samples)

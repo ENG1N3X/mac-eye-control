@@ -8,14 +8,15 @@ import pyautogui
 from src.tracking.face_mesh import FaceMeshTracker
 from src.tracking.iris_tracker import get_iris_positions
 from src.tracking.head_pose import HeadPoseEstimator
+from src.tracking.fixation_detector import GazeFixationDetector
 from src.ui.calibration_ui import CalibrationUI
 
 
 class CalibrationSession:
     def __init__(self, config: dict) -> None:
-        self._dwell_sec = config['calibration_dwell_sec']
         self._n_points = config['calibration_points']
         self._collect_frames = config['calibration_collect_frames']
+        self._config = config
         # Pre-create Tk before OpenCV's cv.imshow() ever runs — avoids the
         # macOS AppKit conflict that crashes Tk 8.6 on newer macOS versions.
         # CalibrationUI.__init__ calls withdraw() immediately, so no window appears.
@@ -36,25 +37,39 @@ class CalibrationSession:
 
         ui = self._ui
         samples = []
+        fixation = GazeFixationDetector(self._config)
 
         try:
             for i, (pt_x, pt_y) in enumerate(grid_points):
                 ui.show_point(i, self._n_points, int(pt_x), int(pt_y))
+                fixation.reset()
 
-                # Discard frames (dwell/settle period — keep UI responsive)
-                frames_discarded = 0
-                while frames_discarded < self._collect_frames:
+                # Phase 1 — wait for fixation
+                while not fixation.is_fixated():
                     ret, frame = cap.read()
                     if not ret:
                         raise RuntimeError("Camera read failed during calibration")
                     result = tracker.process(frame)
                     if result is None:
+                        ui.update_hint("Look at the dot...")
                         ui.tick()
                         continue
+                    mesh_points, mesh_points_3d = result
+                    img_h, img_w = frame.shape[:2]
+                    iris = get_iris_positions(mesh_points)
+                    iris_dx = (iris['l_dx'] + iris['r_dx']) / 2.0
+                    iris_dy = (iris['l_dy'] + iris['r_dy']) / 2.0
+                    fixation.update(iris_dx, iris_dy)
+                    progress = fixation.progress()
+                    if progress > 0.5:
+                        ui.update_hint("Hold still...", 'white')
+                    else:
+                        ui.update_hint("Look at the dot...", 'gray')
+                    ui.update_stability(progress)
                     ui.tick()
-                    frames_discarded += 1
 
-                # Collect frames (countdown shown here)
+                # Phase 2 — collect frames after fixation
+                ui.update_stability(0)
                 iris_dx_vals, iris_dy_vals, pitch_vals, yaw_vals = [], [], [], []
                 frames_collected = 0
                 while frames_collected < self._collect_frames:

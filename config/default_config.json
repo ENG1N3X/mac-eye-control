@@ -27,5 +27,7 @@
   "manual_mouse_timeout_sec": 0.5,
   "manual_mouse_threshold_px": 15,
   "smoothing_alpha": 0.08,
-  "cursor_deadzone_px": 8
+  "cursor_deadzone_px": 8,
+  "fixation_std_threshold": 2.0,
+  "fixation_window_frames": 12
 }
