@@ -25,5 +25,7 @@
   "calibration_path": "data/calibration.json",
   "calibration_collect_frames": 30,
   "manual_mouse_timeout_sec": 0.5,
-  "manual_mouse_threshold_px": 15
+  "manual_mouse_threshold_px": 15,
+  "smoothing_alpha": 0.08,
+  "cursor_deadzone_px": 8
 }
