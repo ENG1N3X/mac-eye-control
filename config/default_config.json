@@ -23,5 +23,7 @@
   "server_port": 7070,
   "head_pose_display_threshold": 10,
   "calibration_path": "data/calibration.json",
-  "calibration_collect_frames": 30
+  "calibration_collect_frames": 30,
+  "manual_mouse_timeout_sec": 0.5,
+  "manual_mouse_threshold_px": 15
 }

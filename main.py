@@ -37,6 +37,7 @@ from src.tracking.blink_detector import BlinkDetector
 from src.tracking.head_pose import HeadPoseEstimator
 from src.control.cursor import CursorController
 from src.control.clicker import DoubleBlinkClicker
+from src.control.mouse_monitor import MouseMonitor
 
 
 def main():
@@ -74,6 +75,8 @@ def main():
     head_pose = HeadPoseEstimator(config)
     cursor_controller = CursorController(config)
     clicker = DoubleBlinkClicker(config)
+    mouse_monitor = MouseMonitor(config)
+    prev_manual_active = False
     click_indicator_until = 0.0
     head_reset_indicator_until = 0.0
 
@@ -163,14 +166,22 @@ def main():
                     pitch, yaw, roll = head_pose.estimate(mesh_points, (img_h, img_w))
 
                 # Cursor control
-                if gaze_mapper.is_calibrated():
+                manual_active = mouse_monitor.check()
+                if prev_manual_active and not manual_active:
+                    cursor_controller.reset_buffer()
+                prev_manual_active = manual_active
+                if gaze_mapper.is_calibrated() and not manual_active:
                     iris_dx = (iris["l_dx"] + iris["r_dx"]) / 2.0
                     iris_dy = (iris["l_dy"] + iris["r_dy"]) / 2.0
                     try:
                         pred_x, pred_y = gaze_mapper.predict(iris_dx, iris_dy, pitch, yaw)
-                        cursor_controller.move(pred_x, pred_y)
+                        pos = cursor_controller.move(pred_x, pred_y)
+                        if pos:
+                            mouse_monitor.record_gaze_move(*pos)
                     except Exception as e:
                         logger.error("Gaze prediction failed: %s", e)
+                else:
+                    mouse_monitor.sync_position()
 
                 if PRINT_DATA:
                     print(f"Total Blinks: {blink_detector.total_blinks}")
@@ -292,6 +303,7 @@ def main():
         cv.destroyAllWindows()
         iris_socket.close()
         tracker.close()
+        mouse_monitor.stop()
         if PRINT_DATA:
             print("Program exited successfully.")
         if LOG_DATA and IS_RECORDING:
