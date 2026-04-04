@@ -36,6 +36,7 @@ from src.tracking.iris_tracker import (
 from src.tracking.blink_detector import BlinkDetector
 from src.tracking.head_pose import HeadPoseEstimator
 from src.control.cursor import CursorController
+from src.control.clicker import DoubleBlinkClicker
 
 
 def main():
@@ -59,10 +60,21 @@ def main():
         head_pose_status = "enabled" if ENABLE_HEAD_POSE else "disabled"
         print(f"Head pose estimation is {head_pose_status}.")
 
+    print("\nControls:")
+    print("  [C] Reset head pose   — saves current head position as the 'zero' baseline")
+    print("                          Pitch/yaw for scroll control are measured relative to this point.")
+    print("                          Press while looking straight ahead for best results.")
+    print("  [R] Recalibrate gaze  — runs the full 9-point gaze calibration process")
+    print("  [P] Toggle cursor     — enable/disable gaze cursor control")
+    print("  [S] Toggle recording  — start/stop CSV logging")
+    print("  [Q] Quit\n")
+
     tracker = FaceMeshTracker(config)
     blink_detector = BlinkDetector(config)
     head_pose = HeadPoseEstimator(config)
     cursor_controller = CursorController(config)
+    clicker = DoubleBlinkClicker(config)
+    click_indicator_until = 0.0
 
     cap = cv.VideoCapture(int(args.camSource))
     iris_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -116,7 +128,9 @@ def main():
                 mesh_points, mesh_points_3d = result
 
                 # Blink detection
-                blink_detector.update(mesh_points_3d)
+                blink_detected = blink_detector.update(mesh_points_3d)
+                if clicker.update(blink_detected):
+                    click_indicator_until = time.monotonic() + 0.3
 
                 # Iris positions
                 iris = get_iris_positions(mesh_points)
@@ -211,6 +225,8 @@ def main():
                         cv.putText(frame, f"Pitch: {int(pitch)}", (30, 110), cv.FONT_HERSHEY_DUPLEX, 0.8, (0, 255, 0), 2, cv.LINE_AA)
                         cv.putText(frame, f"Yaw: {int(yaw)}", (30, 140), cv.FONT_HERSHEY_DUPLEX, 0.8, (0, 255, 0), 2, cv.LINE_AA)
                         cv.putText(frame, f"Roll: {int(roll)}", (30, 170), cv.FONT_HERSHEY_DUPLEX, 0.8, (0, 255, 0), 2, cv.LINE_AA)
+                    if time.monotonic() < click_indicator_until:
+                        cv.putText(frame, "CLICK", (30, 210), cv.FONT_HERSHEY_DUPLEX, 0.8, (0, 220, 255), 2, cv.LINE_AA)
 
                     # Controls hint — bottom right corner
                     cursor_state = "ON" if cursor_controller.is_enabled() else "OFF"
