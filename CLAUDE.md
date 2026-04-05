@@ -10,13 +10,13 @@ Built on Python-Gaze-Face-Tracker (MediaPipe + OpenCV). See PRODUCT.md for full 
 ## Tech Stack
 
 | Tool | Purpose |
-|---|---|
+|------|---------|
 | Python 3.x | Language |
 | OpenCV (`cv2`) | Video capture, drawing |
 | MediaPipe | Face mesh, iris tracking (468 landmarks) |
 | NumPy | Math, array ops |
 | `pyautogui` | Mouse movement, clicking, scrolling |
-| `pynput` | Alternative to pyautogui if needed on macOS |
+| `scikit-learn` | Polynomial regression for gaze mapping (Ridge) |
 | `tkinter` | Calibration UI window |
 | `json` | Config and calibration persistence |
 
@@ -29,39 +29,50 @@ Python-Gaze-Face-Tracker/
 ├── src/
 │   ├── tracking/
 │   │   ├── __init__.py
-│   │   ├── face_mesh.py        # MediaPipe wrapper
-│   │   ├── iris_tracker.py     # Iris tracking logic
-│   │   ├── blink_detector.py   # Blink detection (EAR-based)
-│   │   └── head_pose.py        # Head pose estimation (pitch/yaw/roll)
+│   │   ├── face_mesh.py          # MediaPipe FaceMesh wrapper
+│   │   ├── iris_tracker.py       # Iris position extraction (float32 coords)
+│   │   ├── iris_filter.py        # Rolling median spike filter for iris dx/dy
+│   │   ├── blink_detector.py     # EAR-based blink detection + is_eyes_open()
+│   │   ├── fixation_detector.py  # Consecutive-frame fixation detection
+│   │   └── head_pose.py          # Pitch/yaw/roll estimation (display + calibrated)
 │   ├── calibration/
 │   │   ├── __init__.py
-│   │   ├── calibration.py      # Calibration flow (9-point)
-│   │   └── mapping.py          # Eye features → screen coords mapping
+│   │   ├── calibration.py        # 9-point fixation-based calibration flow
+│   │   └── mapping.py            # Polynomial Ridge regression gaze mapper
 │   ├── control/
 │   │   ├── __init__.py
-│   │   ├── cursor.py           # Mouse cursor movement
-│   │   ├── clicker.py          # Double blink click logic
-│   │   └── scroller.py         # Head tilt scroll logic
+│   │   ├── cursor.py             # Dual-speed adaptive EMA cursor + snap zones
+│   │   ├── clicker.py            # Double-blink click logic
+│   │   ├── scroller.py           # Head-tilt scroll logic
+│   │   ├── snap_zones.py         # SnapZoneRegistry (rectangular zones)
+│   │   └── mouse_monitor.py      # Manual mouse override detection (position-based)
 │   ├── ui/
 │   │   ├── __init__.py
-│   │   └── calibration_ui.py   # Fullscreen calibration window (tkinter)
+│   │   └── calibration_ui.py     # Fullscreen tkinter calibration window
 │   └── utils/
 │       ├── __init__.py
-│       ├── angle_buffer.py     # Rolling average (from AngleBuffer.py)
-│       └── config.py           # Config loader/saver
+│       ├── angle_buffer.py       # Rolling average buffer (legacy, still used for head pose)
+│       └── config.py             # Config loader
 ├── config/
-│   └── default_config.json     # Versioned default parameters
+│   └── default_config.json       # All tunable parameters
 ├── data/
-│   └── calibration.json        # Auto-generated, gitignored
-├── logs/                       # CSV logs, gitignored
+│   └── calibration.json          # Auto-generated, gitignored
+├── logs/                         # CSV logs, gitignored
 ├── tests/
-│   └── __init__.py
+│   ├── __init__.py
+│   ├── test_iris_tracker.py
+│   ├── test_cursor_controller.py
+│   ├── test_cursor_accuracy_mvp.py
+│   └── test_calibration_session.py
 ├── tools/
-│   └── mediapipe_landmarks_test.py  # Dev utility
+│   └── mediapipe_landmarks_test.py  # Dev utility — visualize landmark indices
 ├── docs/
-│   └── overview.md
-├── main.py                     # Entry point (thin orchestrator)
-├── AngleBuffer.py              # Legacy — do not use, use src/utils/angle_buffer.py
+│   ├── overview.md
+│   ├── calibration.md            # Calibration system documentation
+│   ├── features/                 # Feature analysis docs
+│   └── logs/                     # Token usage logs
+├── main.py                       # Entry point (thin orchestrator)
+├── AngleBuffer.py                # Legacy — do not use, use src/utils/angle_buffer.py
 ├── requirements.txt
 ├── README.md
 ├── PRODUCT.md
@@ -72,54 +83,71 @@ Python-Gaze-Face-Tracker/
 
 ## Development Phases
 
-Work in this order. Do not start a phase until the previous one is stable.
+### Phase 1 — Calibration ✅ DONE
+- Fullscreen 9-point calibration window (tkinter, `overrideredirect` fullscreen)
+- Fixation-based collection: 20 consecutive stable frames required per point
+- Eyes-open check via `BlinkDetector.is_eyes_open()` — closed eyes reset fixation counter
+- Gaze shift requirement: iris must move ≥ 3 px from previous point before fixation counts
+- Polynomial Ridge regression (degree 2) fit on `(iris_dx, iris_dy, pitch, yaw)` → `(screen_x, screen_y)`
+- Saved to `data/calibration.json`; loaded on startup; recalibration via `R` key
 
-### Phase 1 — Calibration
-- Show fullscreen window with 9 calibration points (3x3 grid)
-- For each point: display dot, wait for user to fixate, record `(iris_dx, iris_dy, pitch, yaw)` averaged over ~1 second
-- Fit a mapping model from eye features to screen coordinates (start with polynomial regression or simple interpolation)
-- Save result to `calibration.json`
-- Load on startup if file exists; skip calibration flow
+### Phase 2 — Cursor Control ✅ DONE
+- Gaze mapper output → `CursorController.move()`
+- Dual-speed adaptive EMA: slow alpha at rest, fast alpha during saccades
+- Deadzone: suppresses micro-tremor below `cursor_deadzone_px`
+- Iris spike filter applied before `gaze_mapper.predict()`
+- Manual mouse override: position-comparison based (no pynput), pauses/resumes gaze control
 
-### Phase 2 — Cursor Control
-- Use calibration mapping to convert current eye features → predicted `(screen_x, screen_y)`
-- Move mouse cursor via `pyautogui.moveTo()`
-- Apply smoothing (extend existing `AngleBuffer` pattern or use exponential moving average)
-- Cursor must always be visible and follow gaze in real time
+### Phase 3 — Double Blink Click ✅ DONE
+- EAR-based blink via `BlinkDetector`, two blinks within 0.5 s → `pyautogui.click()`
+- Single blinks do not trigger
+- On-screen "CLICK" indicator (0.3 s)
 
-### Phase 3 — Double Blink Click
-- Detect blink using existing EAR logic
-- Track blink timestamps; if two blinks occur within 0.5s → fire left click
-- Single blinks must NOT trigger click
-- Show brief on-screen indicator when click fires
+### Phase 4 — Head Tilt Scroll ✅ DONE
+- Calibrated pitch from `HeadPoseEstimator.estimate()`
+- Thresholds: `scroll_threshold_pitch_up` (15°), `scroll_threshold_pitch_down` (−15°)
+- Speed proportional to pitch beyond threshold
 
-### Phase 4 — Head Tilt Scroll
-- Use smoothed pitch from existing head pose estimation
-- Define `SCROLL_THRESHOLD_UP` and `SCROLL_THRESHOLD_DOWN` (degrees beyond neutral)
-- If pitch exceeds threshold: scroll in that direction via `pyautogui.scroll()`
-- Scroll speed = linear function of pitch magnitude beyond threshold
-- Neutral zone = no scroll
+### Phase 5 — Config & Polish ✅ DONE
+- All parameters in `config/default_config.json`
+- Hotkeys: C (reset head pose), R (recalibrate), P (toggle cursor), S (recording), Q (quit)
+- On-screen controls hint overlay (bottom-right corner)
+- Head pose reset confirmation message overlay
 
-### Phase 5 — Config & Polish
-- All thresholds in `config.json` (blink interval, scroll thresholds, scroll speed, smoothing, camera index)
-- Hotkey or on-screen button to pause/resume gaze control
-- Hotkey to trigger recalibration
-- Clean console output (no spam per frame)
+### Cursor Accuracy MVP ✅ DONE
+- `IrisFilter` — rolling median + spike rejection (`src/tracking/iris_filter.py`)
+- `SnapZoneRegistry` — rectangular snap-to-zone lookup (`src/control/snap_zones.py`)
+- Dual-speed adaptive EMA in `CursorController` (replaces single fixed alpha)
+- Iris coordinates switched from `int32` to `float32` (native `cv2.minEnclosingCircle` output)
 
 ---
 
-## Key Parameters (defaults)
+## Key Parameters (current defaults)
 
 ```json
 {
   "camera_index": 0,
+  "blink_threshold": 0.51,
+  "blink_consec_frames": 2,
   "blink_double_interval_sec": 0.5,
   "scroll_threshold_pitch_up": 15,
   "scroll_threshold_pitch_down": -15,
   "scroll_speed": 5,
-  "smoothing_window": 10,
+  "smoothing_alpha": 0.08,
+  "cursor_alpha_fast": 0.35,
+  "cursor_fast_velocity_threshold_px": 80,
+  "cursor_deadzone_px": 8,
+  "iris_filter_window": 5,
+  "iris_spike_threshold_px": 8.0,
+  "snap_zones": [],
   "calibration_dwell_sec": 1.0,
-  "calibration_points": 9
+  "calibration_points": 9,
+  "calibration_collect_frames": 30,
+  "calibration_gaze_shift_px": 3,
+  "fixation_window_frames": 20,
+  "fixation_movement_threshold": 2.5,
+  "manual_mouse_timeout_sec": 0.5,
+  "manual_mouse_threshold_px": 15
 }
 ```
 
@@ -127,10 +155,12 @@ Work in this order. Do not start a phase until the previous one is stable.
 
 ## macOS Notes
 
-- `pyautogui` requires **Accessibility permissions** in System Settings → Privacy & Security → Accessibility
+- `pyautogui` requires **Accessibility permissions** — System Settings → Privacy & Security → Accessibility
 - MacBook built-in webcam index is `0`
-- Do not use `cv2.imshow` for the main control overlay — it blocks the event loop. Use a separate thread or avoid fullscreen OpenCV windows during active control
-- Calibration window should be `tkinter` fullscreen to cover the entire display
+- `cv2.imshow` is used only for the tracking overlay (non-blocking with `waitKey(1)`)
+- Calibration window uses `overrideredirect(True)` + manual `geometry(WxH+0+0)` instead of `-fullscreen True` — the latter bypasses `withdraw()` on macOS Tk 8.6 and causes AppKit crashes
+- `CalibrationUI` must be created on the main thread **before** `cv2.imshow` is ever called — creating a `tk.Tk()` instance after OpenCV has started its window causes `NSInvalidArgumentException` on macOS
+- `CalibrationUI.close()` calls `withdraw()` (not `destroy()`) — the Tk instance is reused across recalibrations
 
 ---
 
@@ -139,7 +169,7 @@ Work in this order. Do not start a phase until the previous one is stable.
 Use these slash commands to implement phases via AI agents:
 
 | Command | When to use |
-|---|---|
+|---------|-------------|
 | `/implement-phase <phase>` | Implement a phase whose plan already exists in `docs/features/development-plan.md`. Skips planner — goes directly to developer → tester. Lean test scope (15–25 tests). |
 | `/new-feature <description>` | Implement a new feature with no existing plan. Runs planner → developer → tester. |
 | `/analyze-feature <description>` | Analyze and document a feature idea before implementation. Saves result to `docs/features/`. |
@@ -157,3 +187,4 @@ After each command completes, update `docs/logs/token_usage.md` with agent token
 - Do not use `time.sleep()` in the main tracking loop — it will drop frames
 - tkinter windows must be created and used on the main thread (macOS requirement)
 - Ask before adding new dependencies not listed in this file
+- Calibration tests (`test_calibration_session.py`) test function logic only — no UI or camera hardware; use `fixation_window_frames: 1`, `fixation_movement_threshold: 100`, `calibration_gaze_shift_px: 0` in MINIMAL_CONFIG to avoid infinite loops
